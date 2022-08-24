@@ -1,0 +1,6 @@
+env: dev
+token: abcdef
+rabbit:
+  uri: amqp://guest:guest@localhost
+mongo:
+  url:

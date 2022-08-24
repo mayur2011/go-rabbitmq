@@ -1,62 +1,55 @@
 package main
 
 import (
-	amqp "github.com/rabbitmq/amqp091-go"
+	"context"
+	"encoding/json"
+	"go-rabbitmq/config"
+	"go-rabbitmq/model"
+	"go-rabbitmq/rmq"
+	"log"
 )
 
-type Config struct {
-	Rabbit *amqp.Connection
+func failOnError(err error, msg string) {
+	if err != nil {
+		log.Panicf("%s: %s", msg, err)
+	}
 }
 
-type MessagePayload struct {
-	Name string `json:"name"`
-	Data string `json:"data"`
-}
-
-func main(){
-	fmt.Println("starting...")	
-	
+func main() {
+	conf := config.GetConfig()
 	// try to connect to rabbitmq
-	rabbitConn, err := connect()
-	if err !=nil{
-		log.Println(err)
-		os.Exit(1)
-	}
-	defer rabbitConn.Close()
+	rmqConn, err := rmq.NewAMQPConnection(conf)
+	failOnError(err, "failed to connect to rmq")
+	defer rmqConn.Close()
+	log.Println("connected to rmq..!")
 
-	app := Config{
-		Rabbit: rabbitConn,
+	// open a channel
+	ch, err := rmqConn.Channel()
+	failOnError(err, "fail to open a channel")
+	defer ch.Close()
+
+	// declare queue
+	q, err := ch.QueueDeclare("gdq.order", false, false, false, false, nil)
+	failOnError(err, "fail to declare a queue")
+
+	message := model.Message{
+		Sequence: 1,
+		Payload:  "cedd is missing",
 	}
+	jsonByte, err := json.Marshal(message)
+	if err != nil {
+		log.Panicln(err)
+	}
+
+	ctx := context.TODO()
+	if err = rmq.PublishMessage(ctx, ch, q, jsonByte); err != nil {
+		failOnError(err, "fail to publish message to queue")
+	}
+	log.Println(message, ".. is published")
 
 	// start listening for messages
-	// create consumer -- which consumes msg from the queue
-	// watch the queue and consume events from the topic
-}
 
-func connect() (*amqp.Connection, error) {
-	var counts int64
-	var backoff = 1*time.Second
-	var connection *amqp.Connection
+	// create consumer
 
-	// don't continue until rabbit is ready
-	for {
-		c, err := amqp.Dial("amqp://guest:guest@localhost")
-		if err != nil {
-			panic(err)
-			counts++
-		}else{
-			connection = c
-		}
-
-		if counts > 5 {
-			fmt.Println(err)
-			return nil, err
-		}
-
-		backoff = time.Duration(math.Pow(float64(counts), 2)) * time.Second
-		log.Println("backing off...")
-		time.Sleep(backoff)
-		continue
-	}
-	return connection, nil
+	// watch the queue and consume events
 }
